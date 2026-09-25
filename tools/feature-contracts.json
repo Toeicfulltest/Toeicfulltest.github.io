@@ -12,6 +12,7 @@
     "get_test_authoring_v120",
     "register_violation_v2",
     "save_answer_v2",
+    "student_list_tests_v120",
     "staff_archive_test",
     "staff_clone_test_v120",
     "staff_complete_practice_listening_v118",
