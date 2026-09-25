@@ -23,24 +23,46 @@ export function createStaffResultsController({sb,esc,fmt,statusBadge,toast,getWo
   }
 
   async function renderLiveTab(testId){
+    let trackedAttemptIds=new Set(),refreshTimer=null,lastRefreshAt=0,loading=false,queued=false;
     const load=async()=>{
-      const {data,error}=await sb.rpc("staff_get_test_live_v120",{p_test_id:testId});
-      const root=document.querySelector("#liveRoot"); if(!root) return;
-      if(error) return root.innerHTML=`<div class="warning-box">${esc(error.message)}</div>`;
-      const rows=data.rows||[],classes=data.classes||[],workspace=getWorkspace(),totalQuestions=workspace?.qs?.length||100,classFilter=workspace?.liveClassFilter||"",classRows=rows.filter(r=>rowInClass(r,classFilter));
-      const counts={roster:classRows.length,attempts:classRows.reduce((n,r)=>n+Number(r.attempts_used||0),0),in:classRows.filter(r=>r.status==="in_progress").length,done:classRows.filter(r=>["submitted","auto_submitted"].includes(r.status)).length,none:classRows.filter(r=>!r.attempt_id).length,viol:classRows.filter(r=>(r.violation_count||0)>0).length};
-      root.innerHTML=`<div class="row between wrap"><div><h2>LIVE</h2><p class="muted">Tự cập nhật khi sinh viên làm bài. Có thể lọc riêng từng lớp.</p></div><div class="row wrap"><label>Lớp<select id="liveClassFilter">${classOptions(classes,classFilter)}</select></label><button class="secondary" id="liveExcel">↓ Excel hiện tại</button></div></div>
-      <div class="live-kpis">${[["Sĩ số",counts.roster],["Lượt thi",counts.attempts],["Đang làm",counts.in],["Đã nộp",counts.done],["Chưa vào",counts.none],["Có vi phạm",counts.viol]].map(([a,b])=>`<div><span>${a}</span><b>${b}</b></div>`).join("")}</div>
-      <div class="row wrap live-filters">${["all","in_progress","done","none","viol"].map(k=>`<button class="${(getWorkspace()?.liveFilter||"all")===k?"primary":"secondary"} sm live-filter" data-filter="${k}">${({all:"Tất cả",in_progress:"Đang làm",done:"Đã nộp",none:"Chưa làm",viol:"Có vi phạm"})[k]}</button>`).join("")}</div>
-      <div class="table-wrap"><table id="liveTable"><thead><tr><th>Họ tên</th><th>MSSV</th><th>Lớp</th><th>Lượt</th><th>Trạng thái</th><th>Tiến độ</th><th>Bắt đầu</th><th>Còn lại</th><th>Vi phạm</th><th>Điểm /10</th></tr></thead><tbody>${classRows.map(r=>liveRow(r,totalQuestions)).join("")||`<tr><td colspan="10" class="empty">Lớp chưa có sinh viên.</td></tr>`}</tbody></table></div>`;
-      document.querySelector("#liveExcel").onclick=()=>exportTestExcel(testId,document.querySelector("#liveClassFilter")?.value||"");
-      document.querySelector("#liveClassFilter").onchange=e=>{const w=getWorkspace();if(w?.id===testId)w.liveClassFilter=e.target.value;load();};
-      const applyLiveFilter=f=>{const w=getWorkspace();if(w?.id===testId)w.liveFilter=f;document.querySelectorAll(".live-filter").forEach(x=>x.className=`${x.dataset.filter===f?"primary":"secondary"} sm live-filter`);document.querySelector("#liveTable tbody").innerHTML=classRows.filter(r=>f==="all"||(f==="in_progress"&&r.status==="in_progress")||(f==="done"&&["submitted","auto_submitted"].includes(r.status))||(f==="none"&&!r.attempt_id)||(f==="viol"&&(r.violation_count||0)>0)).map(r=>liveRow(r,totalQuestions)).join("")||`<tr><td colspan="10" class="empty">Không có dữ liệu.</td></tr>`;};
-      document.querySelectorAll(".live-filter").forEach(btn=>btn.onclick=()=>applyLiveFilter(btn.dataset.filter));applyLiveFilter(getWorkspace()?.liveFilter||"all");
+      if(loading){queued=true;return;}
+      loading=true;
+      try{
+        const {data,error}=await sb.rpc("staff_get_test_live_v122",{p_test_id:testId});
+        const root=document.querySelector("#liveRoot"); if(!root) return;
+        if(error) return root.innerHTML=`<div class="warning-box">${esc(error.message)}</div>`;
+        const rows=data.rows||[],classes=data.classes||[],workspace=getWorkspace(),totalQuestions=Number(data.total_questions)||workspace?.questionCount||workspace?.qs?.length||100,classFilter=workspace?.liveClassFilter||"",classRows=rows.filter(r=>rowInClass(r,classFilter));
+        trackedAttemptIds=new Set(rows.map(r=>r.attempt_id).filter(Boolean));
+        const counts={roster:classRows.length,attempts:classRows.reduce((n,r)=>n+Number(r.attempts_used||0),0),in:classRows.filter(r=>r.status==="in_progress").length,done:classRows.filter(r=>["submitted","auto_submitted"].includes(r.status)).length,none:classRows.filter(r=>!r.attempt_id).length,viol:classRows.filter(r=>(r.violation_count||0)>0).length};
+        root.innerHTML=`<div class="row between wrap"><div><h2>LIVE</h2><p class="muted">Tự cập nhật khi sinh viên làm bài. Có thể lọc riêng từng lớp.</p></div><div class="row wrap"><label>Lớp<select id="liveClassFilter">${classOptions(classes,classFilter)}</select></label><button class="secondary" id="liveExcel">↓ Excel hiện tại</button></div></div>
+        <div class="live-kpis">${[["Sĩ số",counts.roster],["Lượt thi",counts.attempts],["Đang làm",counts.in],["Đã nộp",counts.done],["Chưa vào",counts.none],["Có vi phạm",counts.viol]].map(([a,b])=>`<div><span>${a}</span><b>${b}</b></div>`).join("")}</div>
+        <div class="row wrap live-filters">${["all","in_progress","done","none","viol"].map(k=>`<button class="${(getWorkspace()?.liveFilter||"all")===k?"primary":"secondary"} sm live-filter" data-filter="${k}">${({all:"Tất cả",in_progress:"Đang làm",done:"Đã nộp",none:"Chưa làm",viol:"Có vi phạm"})[k]}</button>`).join("")}</div>
+        <div class="table-wrap"><table id="liveTable"><thead><tr><th>Họ tên</th><th>MSSV</th><th>Lớp</th><th>Lượt</th><th>Trạng thái</th><th>Tiến độ</th><th>Bắt đầu</th><th>Còn lại</th><th>Vi phạm</th><th>Điểm /10</th></tr></thead><tbody>${classRows.map(r=>liveRow(r,totalQuestions)).join("")||`<tr><td colspan="10" class="empty">Lớp chưa có sinh viên.</td></tr>`}</tbody></table></div>`;
+        document.querySelector("#liveExcel").onclick=()=>exportTestExcel(testId,document.querySelector("#liveClassFilter")?.value||"");
+        document.querySelector("#liveClassFilter").onchange=e=>{const w=getWorkspace();if(w?.id===testId)w.liveClassFilter=e.target.value;load();};
+        const applyLiveFilter=f=>{const w=getWorkspace();if(w?.id===testId)w.liveFilter=f;document.querySelectorAll(".live-filter").forEach(x=>x.className=`${x.dataset.filter===f?"primary":"secondary"} sm live-filter`);document.querySelector("#liveTable tbody").innerHTML=classRows.filter(r=>f==="all"||(f==="in_progress"&&r.status==="in_progress")||(f==="done"&&["submitted","auto_submitted"].includes(r.status))||(f==="none"&&!r.attempt_id)||(f==="viol"&&(r.violation_count||0)>0)).map(r=>liveRow(r,totalQuestions)).join("")||`<tr><td colspan="10" class="empty">Không có dữ liệu.</td></tr>`;};
+        document.querySelectorAll(".live-filter").forEach(btn=>btn.onclick=()=>applyLiveFilter(btn.dataset.filter));applyLiveFilter(getWorkspace()?.liveFilter||"all");
+      }finally{
+        lastRefreshAt=Date.now();loading=false;
+        if(queued){queued=false;scheduleRefresh();}
+      }
     };
-    await load(); let pending=null; const refresh=()=>{clearTimeout(pending);pending=setTimeout(load,450)};
+    const scheduleRefresh=()=>{
+      if(refreshTimer)return;
+      const wait=Math.max(0,2000-(Date.now()-lastRefreshAt));
+      refreshTimer=setTimeout(async()=>{refreshTimer=null;await load();},wait);
+    };
+    const relatedAttemptEvent=payload=>{
+      const attemptId=payload?.new?.attempt_id||payload?.old?.attempt_id;
+      if(attemptId&&trackedAttemptIds.has(attemptId))scheduleRefresh();
+    };
+    await load();
     clearLiveChannel();
-    const channel=sb.channel(`test-live-${testId}`).on("postgres_changes",{event:"*",schema:"public",table:"attempts",filter:`test_id=eq.${testId}`},refresh).on("postgres_changes",{event:"*",schema:"public",table:"answers"},refresh).on("postgres_changes",{event:"*",schema:"public",table:"anti_cheat_events"},refresh).subscribe();
+    const channel=sb.channel(`test-live-${testId}`)
+      .on("postgres_changes",{event:"*",schema:"public",table:"attempts",filter:`test_id=eq.${testId}`},scheduleRefresh)
+      .on("postgres_changes",{event:"*",schema:"public",table:"answers"},relatedAttemptEvent)
+      .on("postgres_changes",{event:"*",schema:"public",table:"anti_cheat_events"},relatedAttemptEvent)
+      .subscribe();
     setLiveChannel(channel);
   }
 
@@ -50,18 +72,26 @@ export function createStaffResultsController({sb,esc,fmt,statusBadge,toast,getWo
     return `<div class="row wrap">${viewBtn}<button class="ghost sm reset-attempt" data-id="${r.attempt_id}" data-name="${esc(r.full_name)}">Reset lượt</button>${delBtn}</div>`;
   }
 
-  async function renderSubmissionsTab(testId){
-    const {data,error}=await sb.rpc("staff_get_test_export_v120",{p_test_id:testId}),root=document.querySelector("#submissionsRoot"); if(!root)return;if(error)return root.innerHTML=`<div class="warning-box">${esc(error.message)}</div>`;
-    const workspace=getWorkspace(),classes=data.classes||[],classFilter=workspace?.submissionClassFilter||"",rows=(data.students||[]).filter(r=>!classFilter||r.class_id===classFilter),className=classes.find(c=>c.id===classFilter)?.name||"tất cả lớp";
+  async function renderSubmissionsTab(testId,{force=false}={}){
+    const root=document.querySelector("#submissionsRoot"); if(!root)return;
+    const workspace=getWorkspace();
+    let data=workspace?.submissionData||null;
+    if(force||!data){
+      const res=await sb.rpc("staff_get_test_submissions_v121",{p_test_id:testId});
+      if(res.error)return root.innerHTML=`<div class="warning-box">${esc(res.error.message)}</div>`;
+      data=res.data||{};
+      if(workspace?.id===testId)workspace.submissionData=data;
+    }
+    const classes=data.classes||[],classFilter=workspace?.submissionClassFilter||"",rows=(data.students||[]).filter(r=>!classFilter||r.class_id===classFilter),className=classes.find(c=>c.id===classFilter)?.name||"tất cả lớp",totalQuestions=Number(data.total_questions)||100;
     root.innerHTML=`<div class="row between wrap"><div><h2>Bài làm sinh viên</h2><p class="muted">Xem từng lượt, lọc theo lớp, reset để cho làm lại hoặc xóa lượt.</p></div><div class="row wrap"><label>Lớp<select id="submissionClassFilter">${classOptions(classes,classFilter)}</select></label><button class="primary" id="subExcel">↓ Excel ${esc(className)}</button></div></div>
-    <div class="table-wrap"><table><thead><tr><th>Họ tên</th><th>MSSV</th><th>Lớp</th><th>Lần</th><th>Trạng thái</th><th>Bắt đầu</th><th>Nộp</th><th>Đúng</th><th>Điểm /10</th><th>Vi phạm</th><th>Thao tác</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.full_name)}</td><td>${esc(r.student_code||"—")}</td><td>${esc(r.class_name||"—")}</td><td>${r.attempt_no||"—"}</td><td>${r.attempt_id?statusBadge(r.status):'<span class="status off">Chưa làm</span>'}</td><td>${fmt(r.started_at)}</td><td>${fmt(r.submitted_at)}</td><td>${r.correct_count??"—"}</td><td>${r.correct_count==null?"—":formatScore10(r.correct_count,(r.answers||[]).length||100)}</td><td>${r.violation_count||0}</td><td>${submissionActions(r)}</td></tr>`).join("")||'<tr><td colspan="11" class="empty">Chưa có lượt làm nào.</td></tr>'}</tbody></table></div>`;
+    <div class="table-wrap"><table><thead><tr><th>Họ tên</th><th>MSSV</th><th>Lớp</th><th>Lần</th><th>Trạng thái</th><th>Bắt đầu</th><th>Nộp</th><th>Đúng</th><th>Điểm /10</th><th>Vi phạm</th><th>Thao tác</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.full_name)}</td><td>${esc(r.student_code||"—")}</td><td>${esc(r.class_name||"—")}</td><td>${r.attempt_no||"—"}</td><td>${r.attempt_id?statusBadge(r.status):'<span class="status off">Chưa làm</span>'}</td><td>${fmt(r.started_at)}</td><td>${fmt(r.submitted_at)}</td><td>${r.correct_count??"—"}</td><td>${r.correct_count==null?"—":formatScore10(r.correct_count,totalQuestions)}</td><td>${r.violation_count||0}</td><td>${submissionActions(r)}</td></tr>`).join("")||'<tr><td colspan="11" class="empty">Chưa có lượt làm nào.</td></tr>'}</tbody></table></div>`;
     document.querySelector("#submissionClassFilter").onchange=e=>{const w=getWorkspace();if(w?.id===testId)w.submissionClassFilter=e.target.value;renderSubmissionsTab(testId);};
     document.querySelector("#subExcel").onclick=()=>exportTestExcel(testId,document.querySelector("#submissionClassFilter")?.value||"");document.querySelectorAll(".reset-attempt").forEach(b=>b.onclick=()=>confirmAttemptAction("reset",testId,b.dataset.id,b.dataset.name));document.querySelectorAll(".delete-attempt").forEach(b=>b.onclick=()=>confirmAttemptAction("delete",testId,b.dataset.id,b.dataset.name));
   }
 
   async function confirmAttemptAction(action,testId,attemptId,name){
     const isDelete=action==="delete",modalRoot=document.querySelector("#modalRoot");modalRoot.innerHTML=`<div class="modal-backdrop"><div class="modal"><h2>${isDelete?"Xóa bài làm":"Reset lượt làm"}?</h2><p><b>${esc(name||"Sinh viên")}</b></p><div class="warning-box">${isDelete?"Bài làm, câu trả lời và sự kiện chống gian lận của lượt này sẽ bị xóa. Sinh viên có thể làm lại nếu còn lượt.":"Lượt cũ vẫn được giữ để đối soát nhưng chuyển trạng thái Reset; sinh viên được phép bắt đầu lượt mới."}</div><div class="row between"><button class="secondary" data-close>Hủy</button><button class="${isDelete?"danger":"primary"}" id="doAttemptAction">${isDelete?"Xóa bài làm":"Reset lượt"}</button></div></div></div>`;
-    const close=()=>modalRoot.innerHTML="";modalRoot.querySelector("[data-close]").onclick=close;modalRoot.querySelector("#doAttemptAction").onclick=async()=>{const fn=isDelete?"staff_delete_attempt":"staff_reset_attempt";const {data:result,error}=await sb.rpc(fn,{p_attempt_id:attemptId});if(error)return toast(error.message,6000);close();if(isDelete){toast(result?.content_unlocked?"Đã xóa bài làm · đề đã được mở khóa":"Đã xóa bài làm");await refreshCurrentTest(testId,"submissions");return;}toast("Đã reset lượt làm");const w=getWorkspace();if(w?.id===testId){w.loaded.submissions=false;w.loaded.live=false;}clearLiveChannel();await renderSubmissionsTab(testId);};
+    const close=()=>modalRoot.innerHTML="";modalRoot.querySelector("[data-close]").onclick=close;modalRoot.querySelector("#doAttemptAction").onclick=async()=>{const fn=isDelete?"staff_delete_attempt":"staff_reset_attempt";const {data:result,error}=await sb.rpc(fn,{p_attempt_id:attemptId});if(error)return toast(error.message,6000);close();if(isDelete){toast(result?.content_unlocked?"Đã xóa bài làm · đề đã được mở khóa":"Đã xóa bài làm");await refreshCurrentTest(testId,"submissions");return;}toast("Đã reset lượt làm");const w=getWorkspace();if(w?.id===testId){w.loaded.submissions=false;w.loaded.live=false;w.submissionData=null;}clearLiveChannel();await renderSubmissionsTab(testId,{force:true});};
   }
 
   async function exportTestExcel(testId,classId=""){

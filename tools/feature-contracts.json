@@ -1,5 +1,5 @@
 {
-  "generated_from": "TOEIC-Full-Test-V1.17-MODULAR + V1.18 single continuous Listening audio + V1.20 multi-class tests",
+  "generated_from": "TOEIC-Full-Test-V1.17-MODULAR + V1.18 single continuous Listening audio + V1.20 multi-class tests + V1.22 staff performance",
   "rpc": [
     "complete_listening_phase_v118",
     "enforce_absence_timeout_v1",
@@ -25,6 +25,9 @@
     "staff_get_test_export_v120",
     "staff_get_test_live",
     "staff_get_test_live_v120",
+    "staff_get_test_live_v122",
+    "staff_get_test_submissions_v121",
+    "staff_get_test_workspace_v122",
     "staff_list_practice_attempts",
     "staff_preflight_test",
     "staff_preflight_test_v120",

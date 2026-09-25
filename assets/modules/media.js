@@ -10,6 +10,7 @@ function mediaTypeFromFile(file){
 }
 
 const SIGNED_URL_TTL_SECONDS=6*60*60;
+const SIGNED_URL_CACHE_SAFETY_MS=5*60*1000;
 const MAX_SOURCE_IMAGE_BYTES=20*1024*1024;
 const MAX_IMAGE_EDGE=2000;
 const TARGET_IMAGE_BYTES=2.5*1024*1024;
@@ -85,6 +86,18 @@ function uploadErrorMessage(error){
 }
 
 export function createMediaService(sb){
+  const signedUrlCache=new Map();
+  const cachedSignedUrl=path=>{
+    const hit=signedUrlCache.get(path);
+    if(!hit)return null;
+    if(hit.expiresAt<=Date.now()){signedUrlCache.delete(path);return null;}
+    return hit.url;
+  };
+  const rememberSignedUrl=(path,url)=>{
+    if(path&&url)signedUrlCache.set(path,{url,expiresAt:Date.now()+SIGNED_URL_TTL_SECONDS*1000-SIGNED_URL_CACHE_SAFETY_MS});
+    return url||null;
+  };
+
   async function standardUpload(path,file,onProgress){
     onProgress?.({percent:0,uploaded:0,total:file.size,method:"standard",status:"uploading"});
     const {error}=await sb.storage.from("test-media").upload(path,file,{
@@ -193,21 +206,28 @@ export function createMediaService(sb){
 
   async function signedUrl(path){
     if(!path) return null;
+    const cached=cachedSignedUrl(path);if(cached)return cached;
     const {data,error}=await sb.storage.from("test-media").createSignedUrl(path,SIGNED_URL_TTL_SECONDS);
-    return error ? null : data?.signedUrl||null;
+    return error ? null : rememberSignedUrl(path,data?.signedUrl||null);
   }
 
   async function signedUrlMap(paths){
     const unique=[...new Set(paths.filter(Boolean))];
     if(!unique.length) return {};
-    const {data}=await sb.storage.from("test-media").createSignedUrls(unique,SIGNED_URL_TTL_SECONDS);
-    return Object.fromEntries((data||[]).filter(x=>x.signedUrl).map(x=>[x.path,x.signedUrl]));
+    const out={},missing=[];
+    for(const path of unique){const cached=cachedSignedUrl(path);if(cached)out[path]=cached;else missing.push(path);}
+    if(missing.length){
+      const {data}=await sb.storage.from("test-media").createSignedUrls(missing,SIGNED_URL_TTL_SECONDS);
+      for(const item of data||[]){if(item.signedUrl)out[item.path]=rememberSignedUrl(item.path,item.signedUrl);}
+    }
+    return out;
   }
 
   async function removeMedia(path){
     if(!path) return;
     const {error}=await sb.storage.from("test-media").remove([path]);
     if(error) throw error;
+    signedUrlCache.delete(path);
   }
 
   return {uploadMedia,signedUrl,signedUrlMap,removeMedia};
