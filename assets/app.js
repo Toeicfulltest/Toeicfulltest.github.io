@@ -61,7 +61,7 @@ async function prefetchStaffData(force=false){
   staffPrefetchPromise=Promise.all([
     sb.from("profiles").select("*").order("created_at",{ascending:false}),
     sb.from("classes").select("*").order("created_at",{ascending:false}),
-    sb.from("tests").select("*,classes(name)").is("archived_at",null).order("created_at",{ascending:false})
+    sb.from("tests").select("*").is("archived_at",null).order("created_at",{ascending:false})
   ]).then(([u,c,t])=>{if(!u.error)staffDataCache.users=u.data||[];if(!c.error)staffDataCache.classes=c.data||[];if(!t.error)staffDataCache.tests=t.data||[];staffDataCache.updatedAt=Date.now();return staffDataCache;}).finally(()=>{staffPrefetchPromise=null;});
   return staffPrefetchPromise;
 }
