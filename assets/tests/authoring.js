@@ -3,7 +3,7 @@ import { bindAuthoringFilter } from "../modules/authoring-view.js";
 import { bindRichEditors,embeddedImagePaths,hydrateEmbeddedImages,richEditorField,sanitizeRichHtml } from "../modules/rich-editor.js";
 
 export function createAuthoringController(ctx){
-  const {sb,modalRoot,uploadMedia,signedUrl,signedUrlMap,toast,closeModal,getSession,getWorkspaceController}=ctx;
+  const {sb,modalRoot,uploadMedia,signedUrl,signedUrlMap,toast,closeModal,getSession,getWorkspaceController,getBankGenerator}=ctx;
   let authorDraftTimer=null;
   const authorDraftKey=id=>`toeic.authorDraft.${getSession()?.user?.id||"anon"}.${id}`;
   const uiStateKey=id=>`toeic.ui.${getSession()?.user?.id||"anon"}.${id}`;
@@ -38,7 +38,11 @@ export function createAuthoringController(ctx){
   }
 
   function bindAuthoringActions(id,parts,qs,groups,draft,locked=false){
-    bindAuthoringFilter();if(locked)return;const workspace=getWorkspaceController();
+    bindAuthoringFilter();
+    const openGenerator=()=>getBankGenerator()?.open({testId:id,parts,questions:qs});
+    document.querySelector("#generateFromBank")?.addEventListener("click",openGenerator);
+    if(!locked&&sessionStorage.getItem("toeic.openBankGenerator")===id){sessionStorage.removeItem("toeic.openBankGenerator");setTimeout(openGenerator,0);}
+    if(locked)return;const workspace=getWorkspaceController();
     document.querySelectorAll(".add-group").forEach(b=>b.onclick=e=>{e.preventDefault();openGroupEditor(id,b.dataset.part,+b.dataset.partno,null,null,groups)});
     document.querySelectorAll(".add-stimulus").forEach(b=>b.onclick=e=>{e.preventDefault();const g=groups.find(x=>x.id===b.dataset.group);openStimulusEditor(id,b.dataset.group,null,null,g?.stimuli||[])});
     document.querySelectorAll(".add-question").forEach(b=>b.onclick=e=>{e.preventDefault();openQuestionEditor(id,b.dataset.part,+b.dataset.partno,groups,null,null,qs)});

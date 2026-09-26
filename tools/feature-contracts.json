@@ -1,5 +1,5 @@
 {
-  "generated_from": "TOEIC-Full-Test-V1.17-MODULAR + V1.18 single continuous Listening audio + V1.20 multi-class tests + V1.22 staff performance",
+  "generated_from": "TOEIC-Full-Test-V1.17-MODULAR + V1.18 single continuous Listening audio + V1.20 multi-class tests + V1.22 staff performance + question bank",
   "rpc": [
     "complete_listening_phase_v118",
     "enforce_absence_timeout_v1",
@@ -16,6 +16,7 @@
     "staff_archive_test",
     "staff_clone_test_v120",
     "staff_complete_practice_listening_v118",
+    "staff_copy_test_item_to_bank",
     "staff_delete_attempt",
     "staff_delete_test",
     "staff_finish_practice_attempt",
@@ -29,9 +30,11 @@
     "staff_get_test_submissions_v121",
     "staff_get_test_workspace_v122",
     "staff_list_practice_attempts",
+    "staff_materialize_bank_selection",
     "staff_preflight_test",
     "staff_preflight_test_v120",
     "staff_reset_attempt",
+    "staff_save_bank_item",
     "staff_save_practice_answer",
     "staff_set_listening_audio_v118b",
     "staff_set_student_class",
@@ -58,6 +61,8 @@
   "tablesOrBuckets": [
     "attempts",
     "authoring_drafts",
+    "bank-media",
+    "bank_items",
     "classes",
     "profiles",
     "test-media",
@@ -74,6 +79,7 @@
     "/practice-result/",
     "/preview/",
     "/profile",
+    "/question-bank",
     "/result/",
     "/student",
     "/teacher",

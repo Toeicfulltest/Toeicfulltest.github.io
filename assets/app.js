@@ -14,9 +14,14 @@ import { createTestListController } from "./tests/test-list.js";
 import { createTestCreateController } from "./tests/test-create.js";
 import { createTestWorkspaceController } from "./tests/test-workspace.js";
 import { createAuthoringController } from "./tests/authoring.js";
+import { createQuestionBankListController } from "./question-bank/bank-list.js";
+import { createQuestionBankEditorController } from "./question-bank/bank-editor.js";
+import { createQuestionBankMediaService } from "./question-bank/bank-media.js";
+import { createQuestionBankGeneratorController } from "./question-bank/bank-generator.js";
 
 const sb=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
 const {uploadMedia,signedUrl,signedUrlMap,removeMedia}=createMediaService(sb);
+const bankMedia=createQuestionBankMediaService(sb);
 const appView=document.querySelector("#view");
 const sessionActions=document.querySelector("#sessionActions");
 const staffHeaderNav=document.querySelector("#staffHeaderNav");
@@ -70,11 +75,11 @@ async function loadProfile(){
   if(!session)return;const {data,error}=await sb.from("profiles").select("*").eq("id",session.user.id).single();
   if(error){console.error(error);profile=null;return;}profile=data;
 }
-function staffHeaderActive(){const p=route();if(p==="/teacher")return "home";if(p==="/accounts")return "accounts";if(p==="/classes"||p.startsWith("/class/"))return "classes";if(p==="/tests"||p.startsWith("/test/")||p.startsWith("/preview/")||p.startsWith("/practice-result/")||p.startsWith("/result/"))return "tests";return "";}
+function staffHeaderActive(){const p=route();if(p==="/teacher")return "home";if(p==="/accounts")return "accounts";if(p==="/classes"||p.startsWith("/class/"))return "classes";if(p==="/question-bank")return "bank";if(p==="/tests"||p.startsWith("/test/")||p.startsWith("/preview/")||p.startsWith("/practice-result/")||p.startsWith("/result/"))return "tests";return "";}
 function renderHeader(){
   if(!session){if(staffHeaderNav){staffHeaderNav.hidden=true;staffHeaderNav.innerHTML="";}sessionActions.innerHTML='<a class="btn ghost header-btn" href="#/login">Đăng nhập</a>';return;}
   const isStaff=["teacher","system_admin"].includes(profile?.role);
-  if(staffHeaderNav){staffHeaderNav.hidden=!isStaff;if(isStaff){const active=staffHeaderActive();staffHeaderNav.innerHTML=`<a class="header-nav-link ${active==="home"?"active":""}" href="#/teacher">Tổng quan</a><a class="header-nav-link ${active==="accounts"?"active":""}" href="#/accounts">Tài khoản</a><a class="header-nav-link ${active==="classes"?"active":""}" href="#/classes">Lớp</a><a class="header-nav-link ${active==="tests"?"active":""}" href="#/tests">Bài kiểm tra</a>`;}}
+  if(staffHeaderNav){staffHeaderNav.hidden=!isStaff;if(isStaff){const active=staffHeaderActive();staffHeaderNav.innerHTML=`<a class="header-nav-link ${active==="home"?"active":""}" href="#/teacher">Tổng quan</a><a class="header-nav-link ${active==="accounts"?"active":""}" href="#/accounts">Tài khoản</a><a class="header-nav-link ${active==="classes"?"active":""}" href="#/classes">Lớp</a><a class="header-nav-link ${active==="tests"?"active":""}" href="#/tests">Bài kiểm tra</a><a class="header-nav-link ${active==="bank"?"active":""}" href="#/question-bank">Ngân hàng</a>`;}}
   sessionActions.innerHTML=`<a class="user-name small profile-link" href="#/profile" title="Hồ sơ">${esc(profile?.full_name||session.user.email)} · ${esc(roleLabel(profile?.role||""))}</a><button class="ghost sm header-btn" id="logoutBtn">Đăng xuất</button>`;
   document.querySelector("#logoutBtn")?.addEventListener("click",async()=>{const activeExam=examCoordinator.getExamState();if(activeExam&&!activeExam.preview){saveAttemptUi();flushAnswerQueue();antiCheat.recordRouteLeave();return;}clearLiveChannel();clearStaffPages();testWorkspaceController.resetWorkspace();await sb.auth.signOut();go("/");});
 }
@@ -83,6 +88,8 @@ let testWorkspaceController;
 let authoringController;
 let accountsController;
 let classesController;
+let questionBank;
+let bankGenerator;
 
 const examApp=createExamApp({sb,modalRoot,signedUrlMap,toast,closeModal,showLoading,staffNav,getSession:()=>session,getProfile:()=>profile,getView:()=>view});
 const {renderStudent,renderStaffPracticeResult,renderResult}=examApp;
@@ -101,13 +108,16 @@ const antiCheat=createAntiCheatController({
 examCoordinator.setAntiCheat(antiCheat);
 
 const staffResults=createStaffResultsController({sb,esc,fmt,statusBadge,toast,getWorkspace:()=>testState.workspace,setLiveChannel:channel=>{liveChannel=channel;},clearLiveChannel,refreshCurrentTest:(id,tab)=>testWorkspaceController.refreshCurrentTest(id,tab)});
-authoringController=createAuthoringController({sb,modalRoot,uploadMedia,signedUrl,signedUrlMap,toast,closeModal,getSession:()=>session,getWorkspaceController:()=>testWorkspaceController});
+authoringController=createAuthoringController({sb,modalRoot,uploadMedia,signedUrl,signedUrlMap,toast,closeModal,getSession:()=>session,getWorkspaceController:()=>testWorkspaceController,getBankGenerator:()=>bankGenerator});
 testWorkspaceController=createTestWorkspaceController({sb,modalRoot,toast,closeModal,showLoading,staffNav,clearLiveChannel,invalidateStaffData,invalidateStaffPage,showStaffPage,getView:()=>view,getSession:()=>session,getStaffResults:()=>staffResults,getAuthoringController:()=>authoringController,testState,uploadMedia,signedUrl,removeMedia});
+bankGenerator=createQuestionBankGeneratorController({sb,modalRoot,toast,closeModal,bankMedia,uploadMedia,removeMedia,onCommitted:async data=>{const id=data?.test_id;if(!id)return;testWorkspaceController.invalidateTestWorkspace(id);await testWorkspaceController.renderTestDetail(id,"authoring");}});
 accountsController=createAccountsController({sb,modalRoot,toast,closeModal,showLoading,staffNav,prefetchStaffData,getStaffDataCache,invalidateStaffData,invalidateStaffPage,showStaffPage,getView:()=>view,getClassController:()=>classesController});
 classesController=createClassesController({sb,modalRoot,toast,closeModal,showLoading,staffNav,prefetchStaffData,getStaffDataCache,invalidateStaffData,invalidateStaffPage,showStaffPage,getView:()=>view,getSession:()=>session,getAccountsController:()=>accountsController});
 const dashboard=createDashboardController({showLoading,staffNav,prefetchStaffData,getStaffDataCache,getView:()=>view,getProfile:()=>profile});
 const testCreate=createTestCreateController({sb,modalRoot,toast,closeModal,invalidateStaffData,invalidateStaffPage});
 const testList=createTestListController({sb,showLoading,staffNav,prefetchStaffData,getStaffDataCache,getView:()=>view,getTestCreate:()=>testCreate});
+const bankEditor=createQuestionBankEditorController({sb,modalRoot,toast,closeModal,bankMedia,onSaved:()=>questionBank?.refresh()});
+questionBank=createQuestionBankListController({sb,toast,getSession:()=>session,getView:()=>view,getEditor:()=>bankEditor});
 const authPages=createAuthPages({sb,toast,showLoading,invalidateStaffData,invalidateStaffPage,renderHeader,getSession:()=>session,getProfile:()=>profile,setProfile:v=>{profile=v;},loadProfile,getView:()=>view,getRecoveryMode:()=>passwordRecoveryMode,setRecoveryMode:v=>{passwordRecoveryMode=v;},rerender:render});
 
 function requireStaff(fn){if(!session)return go("/login");if(!profile)return showLoading("Đang tải hồ sơ...");if(!["teacher","system_admin"].includes(profile.role))return go("/student");return fn();}
@@ -141,6 +151,7 @@ async function render(){
   if(p==="/classes")return requireStaff(()=>showStaffPage("classes",classesController.renderClasses));
   if(p.startsWith("/class/")){const id=p.split("/")[2];return requireStaff(()=>showStaffPage(`class:${id}`,()=>classesController.renderClassDetail(id)));}
   if(p==="/tests")return requireStaff(()=>showStaffPage("tests",testList.renderTests));
+  if(p==="/question-bank")return requireStaff(()=>showStaffPage("question-bank",questionBank.renderBank));
   if(p.startsWith("/test/")){const bits=p.split("/"),id=bits[2],tab=bits[3]||"overview";return requireStaff(()=>showStaffPage(`test:${id}`,()=>testWorkspaceController.renderTestDetail(id,tab),async()=>{if(testState.workspace?.id===id&&document.querySelector(`#testWorkspace[data-test-id="${id}"]`))await testWorkspaceController.activateTestTab(id,tab,{push:false,restore:true});else await testWorkspaceController.renderTestDetail(id,tab);}));}
   clearStaffPages();return authPages.renderHome();
 }
